@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>G検討 ペースタイマー（9/6 13:00–15:00）</title>
+  <style>
+    :root{ --bg:#0b1220; --panel:#121a2b; --text:#e6eefc; --muted:#9fb0d0; --accent:#44c3ff; --ok:#3bd16f; }
+    *{ box-sizing:border-box }
+    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic UI","YuGothic","Meiryo",sans-serif; background:var(--bg); color:var(--text); }
+    .wrap{ max-width:920px; margin:0 auto; padding:24px; }
+    h1{ margin:0 0 12px; font-size:24px; font-weight:700; letter-spacing:.02em; }
+    .hint{ color:var(--muted); font-size:14px; margin-bottom:20px; }
+    .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+    .card{ background:var(--panel); border:1px solid #1f2a42; border-radius:12px; padding:16px 18px; box-shadow:0 2px 14px rgba(0,0,0,.25); }
+    .label{ color:var(--muted); font-size:13px; letter-spacing:.06em; text-transform:uppercase; }
+    .value{ font-size:32px; font-weight:800; margin-top:6px; line-height:1.25; }
+    .value.small{ font-size:22px; font-weight:700; }
+    .status{ display:inline-block; padding:5px 10px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:.04em; }
+    .status--pre{ background:#243250; color:#b8c7e7; }
+    .status--live{ background:#243d2c; color:#b7f6cd; }
+    .status--done{ background:#402b2b; color:#f0b5b5; }
+    .bar{ height:12px; background:#0e1526; border:1px solid #1f2a42; border-radius:999px; overflow:hidden; }
+    .bar>span{ display:block; height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--ok)); transition:width .3s ease; }
+    .mt8{ margin-top:8px; }
+    .mt12{ margin-top:12px; }
+    .mt16{ margin-top:16px; }
+    .mono{ font-variant-numeric:tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    footer{ color:var(--muted); font-size:12px; margin-top:18px; }
+    a{ color:#9bd8ff; text-decoration:none; }
+  </style>
+  <script>
+    // 設定（必要なら編集）
+    const TOTAL_QUESTIONS = 160;
+    // 9月は monthIndex=8（0始まり）
+    const YEAR = new Date().getFullYear();
+    const START_AT = new Date(YEAR, 8, 6, 13, 0, 0); // 9/6 13:00
+    const END_AT   = new Date(YEAR, 8, 6, 15, 0, 0); // 9/6 15:00
+
+    function zero(n){ return n.toString().padStart(2, '0'); }
+    function fmtTime(d){ return `${d.getHours()}:${zero(d.getMinutes())}:${zero(d.getSeconds())}`; }
+    function fmtDate(d){ return `${d.getFullYear()}/${zero(d.getMonth()+1)}/${zero(d.getDate())}`; }
+    function fmtDateTime(d){ return `${fmtDate(d)} ${fmtTime(d)}`; }
+    function clamp(x, a, b){ return Math.min(b, Math.max(a, x)); }
+    function fmtDuration(ms){
+      if (ms < 0) ms = 0;
+      const s = Math.floor(ms/1000);
+      const h = Math.floor(s/3600);
+      const m = Math.floor((s%3600)/60);
+      const ss= s%60;
+      const parts = [];
+      if (h) parts.push(`${h}時間`);
+      parts.push(`${m}分`);
+      parts.push(`${ss}秒`);
+      return parts.join('');
+    }
+
+    // デバッグ用の現在時刻オーバーライド
+    let debugBaseTime = null;      // Date | null
+    let debugActivatedAt = 0;      // 実時間（ms）での開始基準
+
+    function getNow(){
+      if (debugBaseTime){
+        const delta = Date.now() - debugActivatedAt;
+        return new Date(debugBaseTime.getTime() + delta);
+      }
+      return new Date();
+    }
+
+    function update(){
+      const now = getNow();
+      const totalMs = END_AT - START_AT;
+      const untilStart = START_AT - now;
+      const untilEnd = END_AT - now;
+      const elapsedMs = now - START_AT;
+      const progress = clamp(elapsedMs / totalMs, 0, 1);
+      const pace = Math.round(TOTAL_QUESTIONS * progress);
+
+      // DOM 参照
+      const elNow = document.getElementById('now');
+      const elRemain = document.getElementById('remain');
+      const elPace = document.getElementById('pace');
+      const elProg = document.getElementById('prog');
+      const elStat = document.getElementById('stat');
+
+      elNow.textContent = fmtDateTime(now);
+
+      if (now < START_AT){
+        elStat.textContent = '開始前';
+        elStat.className = 'status status--pre';
+        elRemain.textContent = `開始まで ${fmtDuration(untilStart)}`;
+      } else if (now >= END_AT){
+        elStat.textContent = '終了';
+        elStat.className = 'status status--done';
+        elRemain.textContent = '残り 0秒';
+      } else {
+        elStat.textContent = '実施中';
+        elStat.className = 'status status--live';
+        elRemain.textContent = `残り ${fmtDuration(untilEnd)}`;
+      }
+
+      elPace.textContent = `${pace} 問（目安） / ${TOTAL_QUESTIONS}`;
+      elProg.style.width = `${Math.round(progress*100)}%`;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // デバッグUIの初期化
+      const input = document.getElementById('debug-time');
+      const btnClear = document.getElementById('debug-clear');
+
+      function applyDebugFromInput(){
+        const v = input && input.value ? input.value : '';
+        if (!v){
+          debugBaseTime = null;
+          localStorage.removeItem('debugTime');
+          return;
+        }
+        // datetime-local はローカル時刻。安全にパース
+        const m = v.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+        if (!m){
+          return;
+        }
+        const yyyy = Number(m[1]);
+        const MM   = Number(m[2]) - 1; // 0始まり
+        const dd   = Number(m[3]);
+        const hh   = Number(m[4]);
+        const mm   = Number(m[5]);
+        const ss   = Number(m[6] || '0');
+        debugBaseTime = new Date(yyyy, MM, dd, hh, mm, ss);
+        debugActivatedAt = Date.now();
+        localStorage.setItem('debugTime', v);
+      }
+
+      if (input){
+        // 保存値を復元
+        const saved = localStorage.getItem('debugTime');
+        if (saved){
+          input.value = saved;
+          applyDebugFromInput();
+        }
+        input.addEventListener('change', () => { applyDebugFromInput(); update(); });
+        input.addEventListener('input', () => { applyDebugFromInput(); });
+      }
+      if (btnClear){
+        btnClear.addEventListener('click', () => {
+          if (input) input.value = '';
+          debugBaseTime = null;
+          localStorage.removeItem('debugTime');
+          update();
+        });
+      }
+
+      update();
+      setInterval(update, 250);
+    });
+  </script>
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0b1220">
+  <meta name="description" content="G検討（9/6 13:00–15:00）向けのシンプルなペースタイマー。現在時刻、残り時間、平均回答ペース（目安）を表示。">
+</head>
+<body>
+  <div class="wrap">
+    <h1>G検討 ペースタイマー <span class="status status--pre" id="stat">開始前</span></h1>
+    <div class="hint">実施日時: 9/6 13:00–15:00（全 <span class="mono">160</span> 問）</div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">現在時刻</div>
+        <div class="value mono" id="now">--:--:--</div>
+      </div>
+
+      <div class="card">
+        <div class="label">残り時間</div>
+        <div class="value mono" id="remain">--</div>
+      </div>
+
+      <div class="card">
+        <div class="label">平均回答ペース（目安）</div>
+        <div class="value mono" id="pace">--</div>
+      </div>
+    </div>
+
+    <div class="card mt16">
+      <div class="label">進捗</div>
+      <div class="bar mt8" aria-hidden="true"><span id="prog" style="width:0%"></span></div>
+      <div class="hint mt12">進行度に応じた <strong>「今の目安」</strong> を表示します（14:00時点で <strong>80問</strong>）。</div>
+    </div>
+
+    <div class="card mt16">
+      <div class="label">デバッグ: 現在時刻を手動設定</div>
+      <div class="mt12">
+        <input type="datetime-local" id="debug-time" />
+        <button id="debug-clear" style="margin-left:8px;">今に戻す</button>
+      </div>
+      <div class="hint mt12">値を設定すると、その時刻から通常通り進みます。空欄または「今に戻す」で実時刻に戻ります。</div>
+    </div>
+
+    <footer>
+      ブラウザのローカル時刻を使用します（デバッグ欄で上書き可能）。必要に応じてソース内の設定（問題数・開始/終了時刻）を変更してください。
+    </footer>
+  </div>
+</body>
+</html>
